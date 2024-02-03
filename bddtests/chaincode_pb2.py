@@ -967,12 +967,36 @@ class ChaincodeSupportServicer(object):
   """
 
   def Register(self, request_iterator, context):
+      """Register new users from an iterator of requests
+      Args:
+          request_iterator: An iterator of registration requests
+          context: The grpc request context
+      Returns:
+          None: Nothing is returned
+      - Iterate through the request iterator
+      - For each request, validate user data and add to database
+      - Return error if validation fails
+      - Return success otherwise"""
+      
     context.set_code(grpc.StatusCode.UNIMPLEMENTED)
     context.set_details('Method not implemented!')
     raise NotImplementedError('Method not implemented!')
 
 
 def add_ChaincodeSupportServicer_to_server(servicer, server):
+  """
+  Adds a ChaincodeSupportServicer to a gRPC server.
+  Args:
+      servicer: The ChaincodeSupportServicer instance
+      server: The gRPC server instance
+  Returns:
+      None: No value is returned
+  Processing Logic:
+      - Get the RPC method handlers from the servicer
+      - Create a generic handler for the 'protos.ChaincodeSupport' service from the RPC methods
+      - Add the generic handler to the server
+  """
+  
   rpc_method_handlers = {
       'Register': grpc.stream_stream_rpc_method_handler(
           servicer.Register,
@@ -990,6 +1014,17 @@ class BetaChaincodeSupportServicer(object):
   provides the context necessary for the server to respond appropriately.
   """
   def Register(self, request_iterator, context):
+      """Register incoming requests
+      Args:
+          request_iterator: An iterator of requests to process
+          context: The servicer context
+      Returns:
+          None: This method currently does not return anything
+      - Iterate through the request iterator
+      - Process each request based on the request type
+      - Return response for each request
+      - Log any errors encountered"""
+      
     context.code(beta_interfaces.StatusCode.UNIMPLEMENTED)
 
 
@@ -998,10 +1033,41 @@ class BetaChaincodeSupportStub(object):
   provides the context necessary for the server to respond appropriately.
   """
   def Register(self, request_iterator, timeout, metadata=None, with_call=False, protocol_options=None):
+      """Register a streaming pull request
+      Args:
+          request_iterator: An iterable of requests to send
+          timeout: Timeout for each request in seconds
+          metadata: Optional initial metadata
+          with_call: Optional call credentials
+          protocol_options: Optional protocol-specific options
+      Returns:
+          iterator: An iterator of responses from the server
+      - Initialize a call with the provided request iterator and metadata
+      - Send requests from the iterator with the provided timeout
+      - Yield responses from the server as they are received
+      - Close the call when the iterator is exhausted"""
+      
     raise NotImplementedError()
 
 
 def beta_create_ChaincodeSupport_server(servicer, pool=None, pool_size=None, default_timeout=None, maximum_timeout=None):
+  """
+  Creates a gRPC server for the ChaincodeSupport service.
+  Args:
+      servicer: The instance of the ChaincodeSupport service.
+      pool: The thread pool to use for incoming requests.
+      pool_size: The maximum number of threads to use in the thread pool.
+      default_timeout: The default timeout for incoming requests.
+      maximum_timeout: The maximum timeout allowed for incoming requests.
+  Returns:
+      A server object for the ChaincodeSupport service.
+  Processes incoming requests by:
+      - Deserializing requests into ChaincodeMessage objects
+      - Calling methods on the servicer instance
+      - Serializing responses into ChaincodeMessage objects
+      - Running requests asynchronously in a thread pool
+  """
+  
   request_deserializers = {
     ('protos.ChaincodeSupport', 'Register'): ChaincodeMessage.FromString,
   }
@@ -1016,6 +1082,23 @@ def beta_create_ChaincodeSupport_server(servicer, pool=None, pool_size=None, def
 
 
 def beta_create_ChaincodeSupport_stub(channel, host=None, metadata_transformer=None, pool=None, pool_size=None):
+  """
+  Creates a ChaincodeSupport stub
+  Args:
+      channel: The channel to connect to
+      host: The host to connect to
+      metadata_transformer: Optional function for transforming request metadata
+      pool: Optional thread pool for processing requests
+      pool_size: Optional thread pool size
+  Returns:
+      stub: The ChaincodeSupport stub
+  Processing Logic:
+      - Defines request and response serializers/deserializers
+      - Defines stream-stream cardinality for Register method
+      - Creates stub options with serializers/deserializers and pool/size
+      - Returns dynamic stub with channel, service name, cardinalities and options
+  """
+  
   request_serializers = {
     ('protos.ChaincodeSupport', 'Register'): ChaincodeMessage.SerializeToString,
   }
