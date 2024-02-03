@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -30,6 +31,7 @@ import (
 	"github.com/op/go-logging"
 
 	"github.com/hyperledger/fabric/consensus/util/events"
+	pb "github.com/hyperledger/fabric/protos"
 )
 
 func init() {
@@ -1179,6 +1181,73 @@ func TestReplicaCrash3(t *testing.T) {
 	}
 }
 
+// TestReplicaCrash4 simulates the restart with no checkpoints
+// in the store because they have been garbage collected
+// the bug occurs because the low watermark is incorrectly set to
+// be zero
+func TestReplicaCrash4(t *testing.T) {
+	validatorCount := 4
+	config := loadConfig()
+	config.Set("general.K", 2)
+	config.Set("general.logmultiplier", 2)
+	net := makePBFTNetwork(validatorCount, config)
+	defer net.stop()
+
+	twoOffline := false
+	threeOffline := true
+	net.filterFn = func(src int, dst int, msg []byte) []byte {
+		if twoOffline && dst == 2 { // 2 is 'offline'
+			return nil
+		}
+		if threeOffline && dst == 3 { // 3 is 'offline'
+			return nil
+		}
+		return msg
+	}
+
+	for i := int64(1); i <= 8; i++ {
+		net.pbftEndpoints[0].manager.Queue() <- createPbftReqBatch(i, uint64(generateBroadcaster(validatorCount)))
+	}
+	net.process() // vp0,1,2 should have a stable checkpoint for seqNo 8
+	net.process() // this second time is necessary for garbage collection it seams
+
+	// Now vp0,1,2 should be in sync with 8 executions in view 0, and vp4 should be offline
+	for i, pep := range net.pbftEndpoints {
+
+		if i == 3 {
+			// 3 is offline for this test
+			continue
+		}
+
+		if pep.pbft.view != 0 {
+			t.Errorf("Expected replica %d to be in view 1, got %d", pep.id, pep.pbft.view)
+		}
+
+		expectedExecutions := uint64(8)
+		if pep.sc.executions != expectedExecutions {
+			t.Errorf("Expected %d executions on replica %d, got %d", expectedExecutions, pep.id, pep.sc.executions)
+		}
+	}
+
+	// Create new pbft instances to restore from persistence
+	for id := 0; id < 3; id++ {
+		pe := net.pbftEndpoints[id]
+		config := loadConfig()
+		config.Set("general.K", "2")
+		pe.pbft.close()
+		pe.pbft = newPbftCore(uint64(id), config, pe.sc, events.NewTimerFactoryImpl(pe.manager))
+		pe.manager.SetReceiver(pe.pbft)
+		pe.pbft.N = 4
+		pe.pbft.f = (4 - 1) / 3
+		pe.pbft.requestTimeout = 200 * time.Millisecond
+
+		expected := uint64(8)
+		if pe.pbft.h != expected {
+			t.Errorf("Low watermark should have been %d, got %d", expected, pe.pbft.h)
+		}
+	}
+
+}
 func TestReplicaPersistQSet(t *testing.T) {
 	persist := make(map[string][]byte)
 
@@ -1635,6 +1704,30 @@ func TestViewChangeDuringExecution(t *testing.T) {
 	}
 }
 
+func TestStateTransferCheckpoint(t *testing.T) {
+	broadcasts := 0
+	instance := newPbftCore(3, loadConfig(), &omniProto{
+		broadcastImpl: func(msg []byte) {
+			broadcasts++
+		},
+		validateStateImpl: func() {},
+	}, &inertTimerFactory{})
+
+	id := []byte("My ID")
+	events.SendEvent(instance, stateUpdatedEvent{
+		chkpt: &checkpointMessage{
+			seqNo: 10,
+			id:    id,
+		},
+		target: &pb.BlockchainInfo{},
+	})
+
+	if broadcasts != 1 {
+		t.Fatalf("Should have broadcast a checkpoint after the state transfer finished")
+	}
+
+}
+
 func TestStateTransferredToOldPoint(t *testing.T) {
 	skipped := false
 	instance := newPbftCore(3, loadConfig(), &omniProto{
@@ -1684,42 +1777,53 @@ func TestStateNetworkMovesOnDuringSlowStateTransfer(t *testing.T) {
 	}
 }
 
-// This test is designed to ensure state transfer occurs if our checkpoint does not match a quorum cert
-func TestCheckpointDiffersFromQuorum(t *testing.T) {
-	invalidated := false
-	skipped := false
-	instance := newPbftCore(3, loadConfig(), &omniProto{
-		invalidateStateImpl: func() { invalidated = true },
-		skipToImpl:          func(s uint64, id []byte, replicas []uint64) { skipped = true },
-	}, &inertTimerFactory{})
+// This test is designed to ensure the peer panics if the value of the weak cert is different from its own checkpoint
+func TestCheckpointDiffersFromWeakCert(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Weak checkpoint certificate different from own, should have panicked.")
+		}
+	}()
 
-	seqNo := uint64(10)
+	instance := newPbftCore(3, loadConfig(), &omniProto{}, &inertTimerFactory{})
 
 	badChkpt := &Checkpoint{
 		SequenceNumber: 10,
-		Id:             base64.StdEncoding.EncodeToString([]byte("WRONG")),
-		ReplicaId:      0,
+		Id:             "WRONG",
+		ReplicaId:      3,
 	}
-	instance.chkpts[seqNo] = badChkpt.Id // This is done via the exec path, shortcut it here
+	instance.chkpts[10] = badChkpt.Id // This is done via the exec path, shortcut it here
 	events.SendEvent(instance, badChkpt)
 
-	for i := uint64(1); i <= 3; i++ {
+	for i := uint64(0); i < 2; i++ {
 		events.SendEvent(instance, &Checkpoint{
 			SequenceNumber: 10,
-			Id:             base64.StdEncoding.EncodeToString([]byte("CORRECT")),
+			Id:             "CORRECT",
 			ReplicaId:      i,
 		})
 	}
 
-	if instance.h != 10 {
-		t.Fatalf("Replica should have moved its watermarks but did not")
+	if instance.highStateTarget != nil {
+		t.Fatalf("State target should not have been updated")
 	}
+}
 
-	if !instance.skipInProgress {
-		t.Fatalf("Replica should be attempting state transfer")
-	}
+// This test is designed to ensure the peer panics if it observes > f+1 different checkpoint values for the same seqNo
+// This indicates a network that will be unable to move its watermarks and thus progress
+func TestNoCheckpointQuorum(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("More than f+1 different checkpoint values found, should have panicked.")
+		}
+	}()
 
-	if !invalidated || !skipped {
-		t.Fatalf("Replica should have invalidated its state and skipped")
+	instance := newPbftCore(3, loadConfig(), &omniProto{}, &inertTimerFactory{})
+
+	for i := uint64(0); i < 3; i++ {
+		events.SendEvent(instance, &Checkpoint{
+			SequenceNumber: 10,
+			Id:             strconv.FormatUint(i, 10),
+			ReplicaId:      i,
+		})
 	}
 }
