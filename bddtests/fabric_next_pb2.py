@@ -638,12 +638,38 @@ class EndorserStub(object):
 class EndorserServicer(object):
 
   def ProcessProposal(self, request, context):
+      """Process a proposal request
+      Args:
+          request: The proposal request object
+          context: The grpc request context
+      Returns:
+          None: No return value
+      - Validate the request parameters
+      - Check for proposal in database
+      - If exists, return proposal details
+      - Else create a new proposal and save to database
+      - Return error if validation or database operation fails"""
+      
     context.set_code(grpc.StatusCode.UNIMPLEMENTED)
     context.set_details('Method not implemented!')
     raise NotImplementedError('Method not implemented!')
 
 
 def add_EndorserServicer_to_server(servicer, server):
+  """
+  Adds Endorser gRPC servicer methods to a gRPC server
+  Args:
+      servicer: EndorserServicer - The Endorser gRPC servicer
+      server: grpc.Server - The gRPC server
+  Returns:
+      None - Returns nothing
+  Processing Logic:
+      - Gets the ProcessProposal unary-unary RPC method handler from the servicer
+      - Sets request and response serializers for the method
+      - Creates a generic handler with the RPC method handlers
+      - Adds the generic handler to the server
+  """
+  
   rpc_method_handlers = {
       'ProcessProposal': grpc.unary_unary_rpc_method_handler(
           servicer.ProcessProposal,
@@ -658,16 +684,60 @@ def add_EndorserServicer_to_server(servicer, server):
 
 class BetaEndorserServicer(object):
   def ProcessProposal(self, request, context):
+      """Process a proposal request
+      Args:
+          request: The proposal request object
+          context: The gRPC context object
+      Returns:
+          None: No return value
+      - Validate request parameters
+      - Retrieve proposal details from database
+      - Apply business rules for proposal approval
+      - Return response with approval or rejection"""
+      
     context.code(beta_interfaces.StatusCode.UNIMPLEMENTED)
 
 
 class BetaEndorserStub(object):
   def ProcessProposal(self, request, timeout, metadata=None, with_call=False, protocol_options=None):
+      """
+      Process a proposal request
+      Args:
+          request: The proposal request object
+          timeout: Timeout for processing in seconds
+          metadata: Optional additional metadata to pass in headers
+          with_call: If True, returns the call object
+          protocol_options: Protocol specific options
+      Returns:
+          response: The processed response
+      - Validate request parameters
+      - Lookup proposal details from database
+      - Apply any business logic rules for processing
+      - Construct response object
+      """
+      
     raise NotImplementedError()
   ProcessProposal.future = None
 
 
 def beta_create_Endorser_server(servicer, pool=None, pool_size=None, default_timeout=None, maximum_timeout=None):
+  """
+  Creates an Endorser gRPC server.
+  Args:
+      servicer: The Endorser implementation
+      pool: The thread pool to use for asynchronous execution
+      pool_size: The size of the thread pool
+      default_timeout: The default timeout for requests
+      maximum_timeout: The maximum timeout allowed for requests
+  Returns:
+      server: A gRPC server object
+  Processes Proposals:
+      1. Deserializes incoming Proposal requests
+      2. Calls the ProcessProposal method on the servicer object
+      3. Serializes ProposalResponse objects
+      4. Returns a gRPC server object to handle requests
+  """
+  
   request_deserializers = {
     ('protos.Endorser', 'ProcessProposal'): Proposal.FromString,
   }
@@ -682,6 +752,23 @@ def beta_create_Endorser_server(servicer, pool=None, pool_size=None, default_tim
 
 
 def beta_create_Endorser_stub(channel, host=None, metadata_transformer=None, pool=None, pool_size=None):
+  """
+  Create Endorser stub
+  Args:
+      channel: Channel to connect to endorser
+      host: Hostname of endorser
+      metadata_transformer: Optional function to transform metadata
+      pool: Optional thread pool for asynchronous execution
+      pool_size: Optional thread pool size
+  Returns:
+      Stub: Stub to call endorser
+  Processing Logic:
+      - Define request and response serializers and deserializers
+      - Define unary-unary cardinality
+      - Create stub options with serializers, deserializers, host etc
+      - Return dynamic stub with options
+  """
+  
   request_serializers = {
     ('protos.Endorser', 'ProcessProposal'): Proposal.SerializeToString,
   }

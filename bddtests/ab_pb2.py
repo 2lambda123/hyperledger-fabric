@@ -491,6 +491,16 @@ class AtomicBroadcastServicer(object):
 
 
 def add_AtomicBroadcastServicer_to_server(servicer, server):
+  """
+  Adds AtomicBroadcastServicer methods to a gRPC server.
+  Args:
+      servicer: AtomicBroadcastServicer: The servicer to add
+      server: grpc.Server: The server to add methods to
+  Returns:
+      None: No return value
+  Adds the 'Broadcast' and 'Deliver' methods from the servicer to the server to handle AtomicBroadcast RPCs. Registers handlers for each method that handle serialization/deserialization of requests and responses.
+  """
+  
   rpc_method_handlers = {
       'Broadcast': grpc.stream_stream_rpc_method_handler(
           servicer.Broadcast,
@@ -535,6 +545,23 @@ class BetaAtomicBroadcastStub(object):
 
 
 def beta_create_AtomicBroadcast_server(servicer, pool=None, pool_size=None, default_timeout=None, maximum_timeout=None):
+  """
+  Creates an AtomicBroadcast server.
+  Args:
+      servicer: The AtomicBroadcast servicer.
+      pool: The thread pool to use for asynchronous execution.
+      pool_size: The thread pool size if no pool is provided.
+      default_timeout: The default timeout for requests.
+      maximum_timeout: The maximum timeout allowed for requests.
+  Returns:
+      server: A server object for the AtomicBroadcast service.
+  Processing Logic:
+      - Defines request and response serializers for Broadcast and Deliver methods
+      - Defines method implementations that call corresponding methods on servicer
+      - Creates server options with serializers, thread pool, timeouts
+      - Returns a server object using options and method implementations
+  """
+  
   request_deserializers = {
     ('atomicbroadcast.AtomicBroadcast', 'Broadcast'): BroadcastMessage.FromString,
     ('atomicbroadcast.AtomicBroadcast', 'Deliver'): DeliverUpdate.FromString,
@@ -552,6 +579,22 @@ def beta_create_AtomicBroadcast_server(servicer, pool=None, pool_size=None, defa
 
 
 def beta_create_AtomicBroadcast_stub(channel, host=None, metadata_transformer=None, pool=None, pool_size=None):
+  """
+  Creates a gRPC stub for the AtomicBroadcast service.
+  Args:
+      channel: The gRPC channel
+      host: The hostname to connect to
+      metadata_transformer: A function to transform metadata
+      pool: A thread pool for making calls
+      pool_size: The size of the thread pool
+  Returns:
+      stub: A AtomicBroadcast stub
+  - Serializes request and deserializes response for Broadcast and Deliver methods
+  - Sets cardinality for Broadcast and Deliver methods
+  - Creates dynamic stub with options like host, metadata transformer, thread pool
+  - Returns the AtomicBroadcast stub
+  """
+  
   request_serializers = {
     ('atomicbroadcast.AtomicBroadcast', 'Broadcast'): BroadcastMessage.SerializeToString,
     ('atomicbroadcast.AtomicBroadcast', 'Deliver'): DeliverUpdate.SerializeToString,
